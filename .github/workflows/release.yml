@@ -1,0 +1,109 @@
+name: Release
+
+# Pushing a tag such as v1.2.3 tests the tagged commit and publishes a GitHub
+# release with generated notes (grouped as configured in .github/release.yml).
+# The tag itself is what versions the Go module:
+#
+#   git tag -a v0.1.0 -m "v0.1.0"
+#   git push origin v0.1.0
+#
+# https://help.github.com/es/actions/reference/workflow-syntax-for-github-actions#filter-pattern-cheat-sheet
+on:
+  push:
+    tags:
+      - v[0-9].[0-9]+.[0-9]*
+
+# Creating the release is the only thing that needs write access.
+permissions:
+  contents: write
+
+# Naming the shell makes GitHub run every step with "bash -eo pipefail", so a
+# failing command on the left side of a pipe (go test ... | tee) fails the job.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  release:
+    name: Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v6
+
+      - name: Set up Go 1.x
+        id: go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: ./go.mod
+
+      - name: Summary Information
+        run: |
+          echo "# Build Summary" > $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Repository:** ${GITHUB_REPOSITORY}" >> $GITHUB_STEP_SUMMARY
+          echo "**Who merge:** ${GITHUB_TRIGGERING_ACTOR}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commit ID:** ${GITHUB_SHA}" >> $GITHUB_STEP_SUMMARY
+          echo "**Tag:** ${GITHUB_REF_NAME}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+      - name: Format
+        run: |
+          unformatted=$(gofmt -l .)
+          if [[ -n "$unformatted" ]]; then
+            echo "These files are not formatted with gofmt:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: |
+          echo "### Test report" >> $GITHUB_STEP_SUMMARY
+
+          # Coverage is measured on the library package only. The example
+          # programs under docs/examples are built, vetted and run below.
+          go test -race -coverprofile=coverage.txt -covermode=atomic . | tee -a $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+      - name: Test coverage
+        run: |
+          echo "## Test Coverage" >> $GITHUB_STEP_SUMMARY
+
+          # Generate coverage report using standard library tools
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Coverage report" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          go tool cover -func=coverage.txt | tee -a $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Calculate total coverage percentage
+          total_coverage=$(go tool cover -func=coverage.txt | grep total | awk '{print $3}')
+          echo "**Total Coverage:** $total_coverage" >> $GITHUB_STEP_SUMMARY
+
+      - name: Benchmarks (smoke run)
+        run: |
+          # One iteration per benchmark: checks that they still compile and
+          # run. Shared runners are too noisy for meaningful timings.
+          go test -run '^$' -bench . -benchtime 1x .
+
+      - name: Examples
+        run: |
+          for dir in docs/examples/*/; do
+            echo "::group::${dir}"
+            go run "./${dir}"
+            echo "::endgroup::"
+          done
+
+      - name: Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          make_latest: true

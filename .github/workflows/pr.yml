@@ -1,0 +1,160 @@
+name: Pull Request
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  pull-requests: read
+
+# Naming the shell makes GitHub run every step with "bash -eo pipefail", so a
+# failing command on the left side of a pipe (go test ... | tee) fails the job.
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version-file: ./go.mod
+
+      - name: Summary Information
+        # The title, the author and the branch name of a pull request are
+        # chosen by whoever opens it. They are passed through the environment
+        # and never expanded inside the script, so their content cannot be
+        # executed by the shell.
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+          PR_COMMITS: ${{ github.event.pull_request.commits }}
+          PR_CHANGED_FILES: ${{ github.event.pull_request.changed_files }}
+          PR_ADDITIONS: ${{ github.event.pull_request.additions }}
+          PR_DELETIONS: ${{ github.event.pull_request.deletions }}
+        run: |
+          echo "# Pull Request Summary" > $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Repository:** ${GITHUB_REPOSITORY}" >> $GITHUB_STEP_SUMMARY
+          echo "**Pull Request:** ${PR_TITLE}" >> $GITHUB_STEP_SUMMARY
+          echo "**Author:** ${PR_AUTHOR}" >> $GITHUB_STEP_SUMMARY
+          echo "**Branch:** ${PR_HEAD_REF}" >> $GITHUB_STEP_SUMMARY
+          echo "**Base:** ${PR_BASE_REF}" >> $GITHUB_STEP_SUMMARY
+          echo "**Commits:** ${PR_COMMITS}" >> $GITHUB_STEP_SUMMARY
+          echo "**Changed Files:** ${PR_CHANGED_FILES}" >> $GITHUB_STEP_SUMMARY
+          echo "**Additions:** ${PR_ADDITIONS}" >> $GITHUB_STEP_SUMMARY
+          echo "**Deletions:** ${PR_DELETIONS}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+      - name: Tools and versions
+        run: |
+          echo "## Tools and versions" >> $GITHUB_STEP_SUMMARY
+
+          ubuntu_version=$(lsb_release -a 2>&1 | grep "Description" | awk '{print $2, $3, $4}')
+          echo "Ubuntu version: $ubuntu_version"
+          echo "**Ubuntu Version:** $ubuntu_version" >> $GITHUB_STEP_SUMMARY
+
+          bash_version=$(bash --version | head -n 1 | awk '{print $4}')
+          echo "Bash version: $bash_version"
+          echo "**Bash Version:** $bash_version" >> $GITHUB_STEP_SUMMARY
+
+          git_version=$(git --version | awk '{print $3}')
+          echo "Git version: $git_version"
+          echo "**Git Version:** $git_version" >> $GITHUB_STEP_SUMMARY
+
+          go_version=$(go version | awk '{print $3}')
+          echo "Go version: $go_version"
+          echo "**Go Version:** $go_version" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+      - name: Lines of code
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          export TOOL_NAME="scc"
+          export GIT_ORG="boyter"
+          export GIT_REPO="scc"
+          export OS=$(uname -s)
+          export OS_ARCH=$(uname -m)
+          # Normalize architecture names to match asset naming
+          [[ "$OS_ARCH" == "aarch64" ]] && OS_ARCH="arm64"
+          [[ "$OS_ARCH" == "x86_64" ]] && OS_ARCH="x86_64"
+          export ASSETS_NAME=$(gh release view --repo ${GIT_ORG}/${GIT_REPO} --json assets -q "[.assets[] | select(.name | contains(\"${TOOL_NAME}\") and contains(\"${OS}\") and contains(\"${OS_ARCH}\"))] | sort_by(.createdAt) | last.name")
+
+          gh release download --repo $GIT_ORG/$GIT_REPO --pattern $ASSETS_NAME
+
+          # Extract based on file extension
+          if [[ "$ASSETS_NAME" == *.tar.gz ]]; then
+            tar -xzf $ASSETS_NAME
+          elif [[ "$ASSETS_NAME" == *.zip ]]; then
+            unzip $ASSETS_NAME
+          fi
+
+          rm $ASSETS_NAME
+
+          mkdir -p ~/go/bin
+          mv $TOOL_NAME ~/go/bin/$TOOL_NAME
+          ~/go/bin/$TOOL_NAME --version
+
+          ~/go/bin/$TOOL_NAME --format html-table . | tee -a $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+      - name: Format
+        run: |
+          unformatted=$(gofmt -l .)
+          if [[ -n "$unformatted" ]]; then
+            echo "These files are not formatted with gofmt:"
+            echo "$unformatted"
+            exit 1
+          fi
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Test
+        run: |
+          echo "### Test report" >> $GITHUB_STEP_SUMMARY
+
+          # Coverage is measured on the library package only. The example
+          # programs under docs/examples are built, vetted and run below.
+          go test -race -coverprofile=coverage.txt -covermode=atomic . | tee -a $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+      - name: Test coverage
+        run: |
+          echo "## Test Coverage" >> $GITHUB_STEP_SUMMARY
+
+          # Generate coverage report using standard library tools
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Coverage report" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          go tool cover -func=coverage.txt | tee -a $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+
+          # Calculate total coverage percentage
+          total_coverage=$(go tool cover -func=coverage.txt | grep total | awk '{print $3}')
+          echo "**Total Coverage:** $total_coverage" >> $GITHUB_STEP_SUMMARY
+
+      - name: Benchmarks (smoke run)
+        run: |
+          # One iteration per benchmark: checks that they still compile and
+          # run. Shared runners are too noisy for meaningful timings.
+          go test -run '^$' -bench . -benchtime 1x .
+
+      - name: Examples
+        run: |
+          for dir in docs/examples/*/; do
+            echo "::group::${dir}"
+            go run "./${dir}"
+            echo "::endgroup::"
+          done
