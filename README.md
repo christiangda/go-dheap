@@ -4,7 +4,6 @@
 [![CodeQL](https://github.com/christiangda/go-dheap/actions/workflows/codeql.yml/badge.svg)](https://github.com/christiangda/go-dheap/actions/workflows/codeql.yml)
 [![Release](https://github.com/christiangda/go-dheap/actions/workflows/release.yml/badge.svg)](https://github.com/christiangda/go-dheap/actions/workflows/release.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/christiangda/go-dheap.svg)](https://pkg.go.dev/github.com/christiangda/go-dheap)
-[![Go Report Card](https://goreportcard.com/badge/github.com/christiangda/go-dheap)](https://goreportcard.com/report/github.com/christiangda/go-dheap)
 ![GitHub go.mod Go version](https://img.shields.io/github/go-mod/go-version/christiangda/go-dheap?style=plastic)
 [![release](https://img.shields.io/github/release/christiangda/go-dheap/all.svg)](https://github.com/christiangda/go-dheap/releases)
 [![license](https://img.shields.io/github/license/christiangda/go-dheap.svg)](https://github.com/christiangda/go-dheap/blob/main/LICENSE)
