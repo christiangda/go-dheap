@@ -35,6 +35,7 @@ func merge(inputs ...[]int) []int {
 		if va, vb := value(a), value(b); va != vb {
 			return va < vb
 		}
+
 		return a.input < b.input // stable: earlier inputs first
 	}
 
@@ -42,23 +43,29 @@ func merge(inputs ...[]int) []int {
 	// builds the heap in linear time.
 	var cursors []cursor
 	total := 0
+
 	for i, in := range inputs {
 		total += len(in)
+
 		if len(in) > 0 {
 			cursors = append(cursors, cursor{input: i})
 		}
 	}
+
 	h := dheap.FromSlice(cursors, 4, less)
 
 	merged := make([]int, 0, total)
+
 	for {
 		c, ok := h.Peek()
 		if !ok {
 			return merged
 		}
+
 		merged = append(merged, value(c))
 
 		c.next++
+
 		if c.next < len(inputs[c.input]) {
 			h.Replace(c) // the input has more values: advance its cursor
 		} else {
@@ -79,5 +86,6 @@ func main() {
 	for i, s := range shards {
 		fmt.Printf("shard %d: %v\n", i, s)
 	}
+
 	fmt.Println("merged: ", merge(shards...))
 }

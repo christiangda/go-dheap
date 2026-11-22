@@ -43,6 +43,7 @@ func NewPriorityQueue[T any]() *PriorityQueue[T] {
 		if a.priority != b.priority {
 			return a.priority > b.priority // higher priority first
 		}
+
 		return a.seq < b.seq // then older entries first
 	}
 
@@ -61,6 +62,7 @@ func (q *PriorityQueue[T]) Enqueue(value T, priority int) {
 // boolean result is false if the queue is empty.
 func (q *PriorityQueue[T]) Dequeue() (T, bool) {
 	e, ok := q.heap.Pop()
+
 	return e.value, ok
 }
 
@@ -68,6 +70,7 @@ func (q *PriorityQueue[T]) Dequeue() (T, bool) {
 // boolean result is false if the queue is empty.
 func (q *PriorityQueue[T]) Peek() (T, bool) {
 	e, ok := q.heap.Peek()
+
 	return e.value, ok
 }
 

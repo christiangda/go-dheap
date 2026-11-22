@@ -55,6 +55,7 @@ func ExampleNew_structs() {
 		if a.priority != b.priority {
 			return a.priority > b.priority // higher priority first
 		}
+
 		return a.name < b.name // then alphabetically
 	})
 
@@ -119,8 +120,10 @@ func ExampleDHeap_PushPop() {
 	for _, v := range []int{4, 9, 1, 7, 3, 8, 2, 6} {
 		if h.Len() < k {
 			h.Push(v)
+
 			continue
 		}
+
 		h.PushPop(v)
 	}
 
@@ -202,6 +205,7 @@ func ExampleDHeap_Update() {
 		name  string
 		score int
 	}
+
 	h := dheap.New(2,
 		func(a, b entry) bool { return a.score > b.score },
 		dheap.WithIndexTracking(func(e entry, i int) { pos[e.name] = i }),
@@ -234,6 +238,7 @@ func ExampleDHeap_Clone() {
 		v, _ := c.Pop()
 		fmt.Println(v)
 	}
+
 	fmt.Println("original still holds", h.Len(), "elements")
 
 	// Output:
@@ -253,4 +258,123 @@ func ExampleDHeap_Clear() {
 
 	// Output:
 	// 0 true
+}
+
+// NewMin is the fast way to get a min-heap of numbers or strings: there is
+// no less function to write, and none to call.
+func ExampleNewMin() {
+	h := dheap.NewMin[int](4)
+
+	for _, v := range []int{5, 2, 8, 1, 9, 3} {
+		h.Push(v)
+	}
+
+	for !h.IsEmpty() {
+		v, _ := h.Pop()
+		fmt.Println(v)
+	}
+
+	// Output:
+	// 1
+	// 2
+	// 3
+	// 5
+	// 8
+	// 9
+}
+
+// NewMax returns the largest element first.
+func ExampleNewMax() {
+	h := dheap.NewMax[float64](4)
+
+	for _, v := range []float64{2.5, -1, 7.25, 0} {
+		h.Push(v)
+	}
+
+	top, _ := h.Peek()
+	fmt.Println("largest:", top)
+	fmt.Println("is max-heap:", h.IsMax())
+
+	// Output:
+	// largest: 7.25
+	// is max-heap: true
+}
+
+// FromSliceMin builds a heap from existing data in linear time. Strings are
+// ordered byte by byte, like the < operator orders them.
+func ExampleFromSliceMin() {
+	words := []string{"pear", "apple", "fig", "banana"}
+	h := dheap.FromSliceMin(words, 2)
+
+	for !h.IsEmpty() {
+		w, _ := h.Pop()
+		fmt.Println(w)
+	}
+
+	// Output:
+	// apple
+	// banana
+	// fig
+	// pear
+}
+
+// FromSliceMax builds a max-heap, here to read scores from best to worst.
+func ExampleFromSliceMax() {
+	scores := []int{71, 94, 58, 86}
+	h := dheap.FromSliceMax(scores, 4)
+
+	best, _ := h.Pop()
+	second, _ := h.Pop()
+	fmt.Println(best, second)
+	fmt.Println("left:", h.Len())
+
+	// Output:
+	// 94 86
+	// left: 2
+}
+
+// A min-heap of bounded size keeps the k largest values of a stream: its
+// root is the smallest value kept, and PushPop evicts it whenever a larger
+// one arrives.
+func ExampleOrdered_PushPop() {
+	const k = 3
+
+	h := dheap.NewMin[int](4)
+
+	for _, v := range []int{4, 9, 1, 7, 3, 8, 2, 6} {
+		if h.Len() < k {
+			h.Push(v)
+
+			continue
+		}
+
+		h.PushPop(v)
+	}
+
+	for !h.IsEmpty() {
+		v, _ := h.Pop()
+		fmt.Println(v)
+	}
+
+	// Output:
+	// 7
+	// 8
+	// 9
+}
+
+// Replace pops the root and pushes a new element in a single pass.
+func ExampleOrdered_Replace() {
+	h := dheap.FromSliceMin([]int{10, 20, 30}, 2)
+
+	for range 4 {
+		smallest, _ := h.Peek()
+		h.Replace(smallest + 15)
+		fmt.Println(smallest)
+	}
+
+	// Output:
+	// 10
+	// 20
+	// 25
+	// 30
 }

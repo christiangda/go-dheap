@@ -9,7 +9,7 @@
 [![release](https://img.shields.io/github/release/christiangda/go-dheap/all.svg)](https://github.com/christiangda/go-dheap/releases)
 [![license](https://img.shields.io/github/license/christiangda/go-dheap.svg)](https://github.com/christiangda/go-dheap/blob/main/LICENSE)
 
-A fast, generic **d-ary heap** for Go: the storage engine for priority queues,
+Fast, generic **d-ary heaps** for Go: the storage engine for priority queues,
 schedulers, timers, top-k selection and graph algorithms.
 
 A d-ary heap is a binary heap with a dial. Instead of two children, every node
@@ -22,12 +22,13 @@ fits your workload.
 ## ✨ Features
 
 - 🧬 **Generic** — `DHeap[T]` holds any type, with no interfaces to implement and no boxing
+- 🏎️ **A fast lane for numbers and strings** — `Ordered[T]` compares with `<` instead of calling a function, 15–25% faster
 - 🎛️ **Any arity** — binary, 4-ary, 8-ary… chosen per heap at run time
-- 🔀 **Any order** — min-heap, max-heap or multi-key ordering through one `less` function
+- 🔀 **Any order** — min-heap, max-heap or multi-key ordering
 - ⚡ **Built for speed** — a flat slice, one write per level, shifts instead of divisions, zero allocations in steady state
 - 🧠 **Cache and memory friendly** — no nodes, no pointers; siblings share a cache line
 - 🎯 **Indexed operations** — `Fix`, `Update` and `PopAt` with built-in index tracking, for decrease-key and cancellation
-- 🚄 **Single-pass shortcuts** — `Replace`, `PushPop` and O(n) `FromSlice`
+- 🚄 **Single-pass shortcuts** — `Replace`, `PushPop` and O(n) construction from a slice
 - ✅ **Thoroughly tested** — 100% statement coverage, randomized tests against a reference model, runnable examples
 - 📦 **Zero dependencies** — standard library only
 
@@ -35,6 +36,7 @@ fits your workload.
 
 - [Installation](#-installation)
 - [Quick start](#-quick-start)
+- [Two heaps, one design](#-two-heaps-one-design)
 - [Why a slice?](#-why-a-slice)
 - [Choosing the arity](#-choosing-the-arity)
 - [API at a glance](#-api-at-a-glance)
@@ -56,6 +58,9 @@ Requires Go 1.24 or later.
 
 ## 🚀 Quick start
 
+Numbers or strings? Use `NewMin` or `NewMax`. There is nothing to configure
+but the arity:
+
 ```go
 package main
 
@@ -67,7 +72,7 @@ import (
 
 func main() {
     // A 4-ary min-heap: the smallest value comes out first.
-    h := dheap.New(4, func(a, b int) bool { return a < b })
+    h := dheap.NewMin[int](4)
 
     for _, v := range []int{5, 2, 8, 1, 9, 3} {
         h.Push(v)
@@ -83,8 +88,9 @@ func main() {
 }
 ```
 
-The `less` function is the whole ordering policy. Flip it for a max-heap, or
-compare several fields for anything more elaborate:
+Anything else? Use `New` and say how to order the elements with a `less`
+function. It is the whole ordering policy: compare one field, several, or
+data that lives outside the element.
 
 ```go
 type job struct {
@@ -97,24 +103,50 @@ jobs := dheap.New(4, func(a, b job) bool {
     if a.priority != b.priority {
         return a.priority > b.priority
     }
+
     return a.name < b.name
 })
+
+jobs.Push(job{name: "send report", priority: 1})
+jobs.Push(job{name: "page on-call", priority: 9})
+
+next, _ := jobs.Pop() // {page on-call 9}
 ```
 
 Already have the data? Build the heap in linear time:
 
 ```go
-h := dheap.FromSlice(data, 4, func(a, b int) bool { return a < b })
+h := dheap.FromSliceMax(scores, 4)        // numbers or strings
+q := dheap.FromSlice(pending, 4, byDeadline) // anything else
 ```
 
 `Peek` and `Pop` return `(value, ok)`, so an empty heap is never confused with
 a zero value.
 
+## 🧬 Two heaps, one design
+
+| | `Ordered[T]` | `DHeap[T]` |
+| --- | --- | --- |
+| Element types | Integers, floats, strings | Any |
+| Ordered by | The `<` operator | Your `less` function |
+| Created with | `NewMin`, `NewMax`, `FromSliceMin`, `FromSliceMax` | `New`, `FromSlice` |
+| `Push`, `Pop`, `Peek`, `Replace`, `PushPop`, `Clear`, `Clone` | ✅ | ✅ |
+| `Fix`, `Update`, `PopAt`, index tracking | — | ✅ |
+| Speed | 🏎️ 15–25% faster | 🚗 |
+
+Both store their elements the same way and run the same algorithms. `Ordered`
+is faster because the compiler places the `<` comparison directly inside the
+heap's loops, while `DHeap` has to call `less` for every comparison.
+
+👉 Use `Ordered` when the elements themselves are the priorities. Use `DHeap`
+when elements carry a payload, need a custom order, or must be updated or
+removed while they are in the heap.
+
 ## 🧠 Why a slice?
 
-`DHeap` never builds a tree of nodes. It keeps the elements in **one slice**,
-level by level, and computes where the parent and the children of an element
-are from its index:
+Neither heap ever builds a tree of nodes. They keep the elements in **one
+slice**, level by level, and compute where the parent and the children of an
+element are from its index:
 
 ```text
                       [0]
@@ -149,7 +181,7 @@ pointers or indices to large ones. More in [docs/design.md](docs/design.md).
 | `Pop` (sift down) | `d · log_d n` | 🐢 slower: more children to compare per level |
 
 - 👉 **Start with 4.** It makes `Push` 30–40% faster than a binary heap and
-  costs `Pop` 10–15%.
+  costs `Pop` at most 10–15%.
 - 📈 **Use 8 or 16** when pushes or priority changes outnumber pops, as in
   Dijkstra's algorithm.
 - 📉 **Use 2** when pops dominate.
@@ -160,6 +192,8 @@ Then measure with your own data: `go test -bench '/d=(2|4|8)'`. The numbers
 behind this advice are in [docs/design.md](docs/design.md#-choosing-the-arity).
 
 ## 🧩 API at a glance
+
+### `DHeap[T any]`
 
 | | Function | What it does | Time |
 | --- | --- | --- | --- |
@@ -179,9 +213,26 @@ behind this advice are in [docs/design.md](docs/design.md#-choosing-the-arity).
 | 🩺 | `IsValid()` | Verifies the heap ordering, for tests | O(n) |
 | 📌 | `WithIndexTracking(fn)` | Option: reports every index change to `fn` | — |
 
-`New` and `FromSlice` panic if the arity is below 2 or `less` is nil. A
-`DHeap` is not safe for concurrent use; add your own locking if goroutines
-share one.
+### `Ordered[T cmp.Ordered]`
+
+| | Function | What it does | Time |
+| --- | --- | --- | --- |
+| 🏗️ | `NewMin[T](arity)`, `NewMax[T](arity)` | Creates an empty min-heap or max-heap | O(1) |
+| 🏗️ | `FromSliceMin(data, arity)`, `FromSliceMax(data, arity)` | Builds a heap from a copy of `data` | O(n) |
+| ➕ | `Push(v)` | Inserts an element | O(log_d n) |
+| ➖ | `Pop()` | Removes and returns the smallest (min-heap) or largest (max-heap) element | O(d log_d n) |
+| 👀 | `Peek()` | Returns that element without removing it | O(1) |
+| 🔄 | `Replace(v)` | Pops the top and pushes `v` in one pass | O(d log_d n) |
+| 🔄 | `PushPop(v)` | Pushes `v` and pops the top in one pass | O(d log_d n) |
+| 📏 | `Len()`, `IsEmpty()`, `Arity()`, `IsMax()` | Size and configuration | O(1) |
+| 🧹 | `Clear()` | Removes everything, keeps the memory | O(n) |
+| 👯 | `Clone()` | Returns an independent copy | O(n) |
+| 🩺 | `IsValid()` | Verifies the heap ordering, for tests | O(n) |
+
+The constructors panic if the arity is below 2, and `New` and `FromSlice`
+also if `less` is nil. In an `Ordered` heap of floats, NaN orders before
+every other value. Neither type is safe for concurrent use; add your own
+locking if goroutines share a heap.
 
 Full reference with runnable examples: [pkg.go.dev](https://pkg.go.dev/github.com/christiangda/go-dheap).
 
@@ -189,7 +240,7 @@ Full reference with runnable examples: [pkg.go.dev](https://pkg.go.dev/github.co
 
 A heap is the storage of a priority queue; the queue adds the policy. The
 guide **[Building priority queues on top of DHeap](docs/priority-queue.md)**
-walks through five patterns, each with a complete program:
+walks through six patterns, each with a complete program:
 
 | Pattern | Example |
 | --- | --- |
@@ -198,6 +249,7 @@ walks through five patterns, each with a complete program:
 | 🧭 Dijkstra's shortest paths with a true decrease-key | [dijkstra](docs/examples/dijkstra/main.go) |
 | 🏆 Top-k of a stream in O(k) memory | [topk](docs/examples/topk/main.go) |
 | 🔀 K-way merge of sorted inputs | [kwaymerge](docs/examples/kwaymerge/main.go) |
+| 📈 Running median with a max-heap and a min-heap | [median](docs/examples/median/main.go) |
 
 A taste of the second one. `WithIndexTracking` lets every element know where
 it is, which turns it into a handle you can update or remove later:
@@ -227,14 +279,14 @@ h.PopAt(docs.index) // or cancel it altogether
 ## 📊 Performance
 
 100,000 `int` elements on an Intel Core i7-7700HQ, Go 1.27, linux/amd64.
-Lower is better.
+Nanoseconds; lower is better.
 
-| Operation | `container/heap` | `DHeap` d=2 | `DHeap` d=4 | `DHeap` d=8 |
-| --- | --- | --- | --- | --- |
-| Push, ns per element | 44.1 | 24.6 | 14.2 | **12.4** |
-| Pop, ns per element | 207.5 | **165.3** | 181.0 | 232.7 |
-| Pop + Push, ns per pair | 184.8 | **158.9** | 162.8 | 203.7 |
-| Allocations per Push or Pop | 1 | **0** | **0** | **0** |
+| Operation | `container/heap` | `DHeap` d=2 | `DHeap` d=4 | `Ordered` d=2 | `Ordered` d=4 |
+| --- | --- | --- | --- | --- | --- |
+| Push, per element | 39.5 | 21.3 | 14.1 | 17.9 | **12.1** |
+| Pop, per element | 211.9 | 170.3 | 171.1 | **130.0** | 130.6 |
+| Pop + Push, per pair | 187.8 | 141.1 | 156.6 | **103.5** | 119.2 |
+| Allocations per Push or Pop | 1 | **0** | **0** | **0** | **0** |
 
 Numbers vary between machines; run the benchmarks on yours:
 
@@ -245,7 +297,7 @@ go test -run '^$' -bench '/d=4' -benchmem     # only arity 4
 
 The suite sweeps arities 2 to 16 and heap sizes from 1,000 to 1,000,000
 elements, covers asymmetric workloads and different element types, and
-includes `container/heap` as a reference. How the heap gets its speed, and
+includes `container/heap` as a reference. How the heaps get their speed, and
 the complete results, are in [docs/design.md](docs/design.md).
 
 ## 🧪 Testing
@@ -254,11 +306,12 @@ the complete results, are in [docs/design.md](docs/design.md).
 go test -race -cover ./...
 ```
 
-The tests check every operation for arities 2 to 64 at the sizes where the
-shape of the tree changes (0, 1, 2, d-1, d, d+1, d², d²+1, …), replay long
-random sequences of operations against a sorted-slice reference model,
-validate the heap invariant with a checker that is independent of the
-implementation, and assert that steady-state operations do not allocate.
+The tests check every operation of both heap types for arities 2 to 64 at
+the sizes where the shape of the tree changes (0, 1, 2, d-1, d, d+1, d²,
+d²+1, …), replay long random sequences of operations against a sorted-slice
+reference model, validate the heap invariant with a checker that is
+independent of the implementation, and assert that steady-state operations do
+not allocate.
 
 ## 🔖 Versioning and releases
 
@@ -273,9 +326,9 @@ git push origin v0.1.0
 ## 📚 Documentation
 
 - 📖 [API reference](https://pkg.go.dev/github.com/christiangda/go-dheap) — every exported name, with examples
-- 🚦 [Priority queue guide](docs/priority-queue.md) — building queues on top of `DHeap`
+- 🚦 [Priority queue guide](docs/priority-queue.md) — building queues on top of the heaps
 - ⚙️ [Design and performance](docs/design.md) — the layout, the hot path, choosing the arity, benchmarks
-- 🧪 [Example programs](docs/examples/) — five complete, runnable programs
+- 🧪 [Example programs](docs/examples/) — six complete, runnable programs
 
 ## 🤝 Contributing
 
@@ -289,7 +342,9 @@ go test -race ./...
 go test -run '^$' -bench . -benchtime 1x .   # benchmarks still run
 ```
 
-For changes to the sift loops, include before and after results from
+`DHeap` and `Ordered` share their algorithms but not their code, so a change
+to the sift loops of one usually belongs in the other too. For such changes,
+include before and after results from
 [benchstat](https://pkg.go.dev/golang.org/x/perf/cmd/benchstat).
 
 ## 📄 License

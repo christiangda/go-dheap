@@ -36,6 +36,7 @@ func fewer(a, b wordCount) bool {
 	if a.count != b.count {
 		return a.count < b.count
 	}
+
 	return a.word > b.word
 }
 
@@ -48,11 +49,14 @@ func topK[T any](seq iter.Seq[T], k int, less func(a, b T) bool) []T {
 
 	// The smallest element kept is at the root.
 	h := dheap.New(4, less)
+
 	for v := range seq {
 		if h.Len() < k {
 			h.Push(v)
+
 			continue
 		}
+
 		// Insert v and evict the smallest element. If v is the smallest,
 		// PushPop hands it straight back and leaves the heap alone.
 		h.PushPop(v)
@@ -63,6 +67,7 @@ func topK[T any](seq iter.Seq[T], k int, less func(a, b T) bool) []T {
 	for i := len(top) - 1; i >= 0; i-- {
 		top[i], _ = h.Pop()
 	}
+
 	return top
 }
 
@@ -73,6 +78,7 @@ the lazy cat sleeps while the brown dog jumps at the quick fox`
 
 func main() {
 	counts := map[string]int{}
+
 	for word := range strings.FieldsSeq(text) {
 		counts[word]++
 	}
@@ -87,6 +93,7 @@ func main() {
 	}
 
 	fmt.Printf("%d distinct words, the 5 most frequent:\n", len(counts))
+
 	for i, wc := range topK(words, 5, fewer) {
 		fmt.Printf("%d. %-5s %d\n", i+1, wc.word, wc.count)
 	}

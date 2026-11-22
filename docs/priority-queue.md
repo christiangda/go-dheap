@@ -2,8 +2,9 @@
 
 A heap is the storage engine of a priority queue: it keeps the most important
 element at hand and everything else in good enough order to find the next one
-quickly. `DHeap` deliberately stops there. It knows nothing about priorities,
-handles or tie-breaking, because those differ from queue to queue.
+quickly. The heaps of this package deliberately stop there. They know nothing
+about priorities, handles or tie-breaking, because those differ from queue to
+queue.
 
 This guide shows how to add them. Every section is backed by a complete
 program under [examples/](examples/) that you can run and copy from.
@@ -15,6 +16,23 @@ program under [examples/](examples/) that you can run and copy from.
 | Shortest paths, A\*, Prim | [Decrease-key](#3--decrease-key-dijkstras-algorithm) | [dijkstra](examples/dijkstra/main.go) |
 | The best *k* of a large or endless stream | [Bounded heap](#4--top-k-with-a-bounded-heap) | [topk](examples/topk/main.go) |
 | To merge sorted inputs | [Cursor heap](#5--k-way-merge) | [kwaymerge](examples/kwaymerge/main.go) |
+| A median or percentile that follows a stream | [Two heaps](#6--two-heaps-of-numbers-a-running-median) | [median](examples/median/main.go) |
+
+## 🧭 Which heap type?
+
+The package has two, and picking one is the first decision:
+
+| Your elements are… | Use | Created with |
+| --- | --- | --- |
+| Numbers or strings that *are* the priority | `Ordered` | `NewMin`, `NewMax`, `FromSliceMin`, `FromSliceMax` |
+| Structs, pointers or IDs ordered by a field or by outside data | `DHeap` | `New`, `FromSlice` |
+| Anything you need to update or remove while it is queued | `DHeap` | `New` with `WithIndexTracking` |
+
+`Ordered` is the faster one, because it compares with the `<` operator instead
+of calling a function. Most priority queues carry a payload next to the
+priority, though, and those are `DHeap` territory. Sections 1 to 5 use
+`DHeap`; [section 6](#6--two-heaps-of-numbers-a-running-median) uses
+`Ordered`.
 
 ## The one rule: `less` decides who goes first
 
@@ -346,17 +364,88 @@ shard 4: [6]
 merged:  [1 2 3 4 4 5 6 7 8 9 11 12 13 16 16 20 25]
 ```
 
+## 6. 📈 Two heaps of numbers: a running median
+
+*Full program: [examples/median](examples/median/main.go)*
+
+When the queue holds bare numbers, there is nothing to wrap and no `less` to
+write: `Ordered` is the storage, and it is faster than `DHeap` for this kind
+of element.
+
+The classic use of *two* heaps is a median that keeps up with a stream. Split
+the values seen so far into a smaller half and a larger half. Keep the smaller
+half in a **max**-heap and the larger half in a **min**-heap, and the median
+is always at one of the two roots:
+
+```text
+ smaller half (max-heap)      larger half (min-heap)
+       1  3  [5]          |        [8]  9  12
+              ▲ root                ▲ root
+```
+
+```go
+type RunningMedian struct {
+    lower *dheap.Ordered[float64] // max-heap: the smaller half
+    upper *dheap.Ordered[float64] // min-heap: the larger half
+}
+
+func NewRunningMedian() *RunningMedian {
+    return &RunningMedian{
+        lower: dheap.NewMax[float64](4),
+        upper: dheap.NewMin[float64](4),
+    }
+}
+
+func (m *RunningMedian) Add(v float64) {
+    if m.lower.Len() == m.upper.Len() {
+        // The lower half must grow. Pass v through the upper half first, so
+        // that the value moving down is the smallest of the large values.
+        m.lower.Push(m.upper.PushPop(v))
+
+        return
+    }
+
+    m.upper.Push(m.lower.PushPop(v))
+}
+```
+
+`PushPop` does the balancing: it inserts the new value into one half and
+hands back that half's root, which then moves to the other half. Adding a
+value costs O(log n) and reading the median O(1).
+
+```console
+$ go run ./docs/examples/median
+latency  median
+   12ms   12.0ms
+    5ms    8.5ms
+   48ms   12.0ms
+    9ms   10.5ms
+    3ms    9.0ms
+   27ms   10.5ms
+    8ms    9.0ms
+  150ms   10.5ms
+   11ms   11.0ms
+    6ms   10.0ms
+
+10 samples
+```
+
+Note how the 150 ms outlier barely moves the median, which is the reason to
+track a median instead of an average.
+
 ## 🧰 Checklist for your own queue
 
-- **Wrap, don't expose.** Keep the `*dheap.DHeap` in an unexported field and
-  give your queue the methods and names that fit your domain.
+- **Pick the heap type first.** `Ordered` for bare numbers and strings,
+  `DHeap` for everything else.
+- **Wrap, don't expose.** Keep the heap in an unexported field and give your
+  queue the methods and names that fit your domain.
 - **Put the whole policy in `less`**, including tie-breaking.
 - **Pick the right single-pass operation:** `Replace` when you pop and push
   together, `PushPop` when you push and maybe pop, `FromSlice` when you
   already have the elements.
 - **Use an arity of 4** unless measurements say otherwise, and keep it a power
   of two. See [design.md](design.md#-choosing-the-arity).
-- **Add your own locking** if several goroutines share the queue; `DHeap` has
-  none.
+- **Add your own locking** if several goroutines share the queue; the heaps
+  have none.
 - **Reuse the queue.** `Clear` keeps the memory, so a refilled queue does not
   allocate.

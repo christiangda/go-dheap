@@ -18,6 +18,7 @@ var testArities = []int{2, 3, 4, 5, 8, 16, 17, 64}
 func boundarySizes(arity int) []int {
 	sizes := []int{0, 1, 2, arity - 1, arity, arity + 1, arity + 2, arity * arity, arity*arity + 1, arity*arity + arity + 1, 1000}
 	slices.Sort(sizes)
+
 	return slices.Compact(sizes)
 }
 
@@ -36,6 +37,7 @@ func invariantError[T any](h *DHeap[T]) error {
 			}
 		}
 	}
+
 	return nil
 }
 
@@ -50,17 +52,20 @@ func randomInts(n int) []int {
 	for i := range vals {
 		vals[i] = r.IntN(n/2 + 1)
 	}
+
 	return vals
 }
 
 // drain pops every element of h and returns them in pop order.
 func drain[T any](h *DHeap[T]) []T {
 	var got []T
+
 	for {
 		v, ok := h.Pop()
 		if !ok {
 			return got
 		}
+
 		got = append(got, v)
 	}
 }
@@ -68,6 +73,7 @@ func drain[T any](h *DHeap[T]) []T {
 func sortedCopy(vals []int, cmp func(a, b int) int) []int {
 	want := slices.Clone(vals)
 	slices.SortFunc(want, cmp)
+
 	return want
 }
 
@@ -115,12 +121,15 @@ func TestNew(t *testing.T) {
 		if got := h.Arity(); got != arity {
 			t.Errorf("New(%d, less).Arity() = %d, want %d", arity, got, arity)
 		}
+
 		if got := h.Len(); got != 0 {
 			t.Errorf("New(%d, less).Len() = %d, want 0", arity, got)
 		}
+
 		if !h.IsEmpty() {
 			t.Errorf("New(%d, less).IsEmpty() = false, want true", arity)
 		}
+
 		if !h.IsValid() {
 			t.Errorf("New(%d, less).IsValid() = false, want true", arity)
 		}
@@ -140,6 +149,7 @@ func TestShift(t *testing.T) {
 		{arity: 1024, want: 10},
 		{arity: 1000, want: 0},
 	}
+
 	for _, tc := range tests {
 		if got := New(tc.arity, intLess).shift; got != tc.want {
 			t.Errorf("New(%d, less).shift = %d, want %d", tc.arity, got, tc.want)
@@ -163,15 +173,19 @@ func TestPushThenPopReturnsSortedOrder(t *testing.T) {
 				t.Run(fmt.Sprintf("%s/d=%d/n=%d", order.name, arity, n), func(t *testing.T) {
 					vals := randomInts(n)
 					h := New(arity, order.less)
+
 					for i, v := range vals {
 						h.Push(v)
+
 						if got := h.Len(); got != i+1 {
 							t.Fatalf("Len() after %d pushes = %d, want %d", i+1, got, i+1)
 						}
 					}
+
 					if err := invariantError(h); err != nil {
 						t.Fatalf("after %d pushes: %v", n, err)
 					}
+
 					if got := h.IsEmpty(); got != (n == 0) {
 						t.Errorf("IsEmpty() after %d pushes = %t, want %t", n, got, n == 0)
 					}
@@ -180,6 +194,7 @@ func TestPushThenPopReturnsSortedOrder(t *testing.T) {
 					if !slices.Equal(got, want) {
 						t.Errorf("popped elements = %v, want %v", got, want)
 					}
+
 					if !h.IsEmpty() {
 						t.Errorf("IsEmpty() after draining = false, want true")
 					}
@@ -197,12 +212,15 @@ func TestFromSlice(t *testing.T) {
 				input := slices.Clone(vals)
 
 				h := FromSlice(input, arity, intLess)
+
 				if !slices.Equal(input, vals) {
 					t.Errorf("FromSlice modified its input: got %v, want %v", input, vals)
 				}
+
 				if got := h.Len(); got != n {
 					t.Errorf("FromSlice(%d elements).Len() = %d, want %d", n, got, n)
 				}
+
 				if err := invariantError(h); err != nil {
 					t.Fatalf("after FromSlice(%v): %v", vals, err)
 				}
@@ -211,6 +229,7 @@ func TestFromSlice(t *testing.T) {
 				for i := range input {
 					input[i] = -1
 				}
+
 				got, want := drain(h), sortedCopy(vals, ascending)
 				if !slices.Equal(got, want) {
 					t.Errorf("popped elements = %v, want %v", got, want)
@@ -225,7 +244,9 @@ func TestFromSliceNil(t *testing.T) {
 	if got := h.Len(); got != 0 {
 		t.Errorf("FromSlice(nil).Len() = %d, want 0", got)
 	}
+
 	h.Push(1)
+
 	if got, ok := h.Pop(); got != 1 || !ok {
 		t.Errorf("Pop() = %d, %t, want 1, true", got, ok)
 	}
@@ -238,15 +259,19 @@ func TestPeek(t *testing.T) {
 	}
 
 	wantMin := 0
+
 	for i, v := range []int{5, 9, 3, 7, 1, 8} {
 		h.Push(v)
+
 		if i == 0 || v < wantMin {
 			wantMin = v
 		}
+
 		if got, ok := h.Peek(); got != wantMin || !ok {
 			t.Errorf("Peek() after pushing %d = %d, %t, want %d, true", v, got, ok, wantMin)
 		}
 	}
+
 	if got := h.Len(); got != 6 {
 		t.Errorf("Len() after Peek = %d, want 6; Peek must not remove elements", got)
 	}
@@ -261,6 +286,7 @@ func TestPopEmpty(t *testing.T) {
 	// A heap that was filled and drained behaves like a new one.
 	h.Push("a")
 	h.Pop()
+
 	if got, ok := h.Pop(); got != "" || ok {
 		t.Errorf("Pop() on drained heap = %q, %t, want %q, false", got, ok, "")
 	}
@@ -272,6 +298,7 @@ func TestReplace(t *testing.T) {
 		if got, ok := h.Replace(7); got != 0 || ok {
 			t.Errorf("Replace(7) on empty heap = %d, %t, want 0, false", got, ok)
 		}
+
 		if got := drain(h); !slices.Equal(got, []int{7}) {
 			t.Errorf("heap after Replace(7) = %v, want [7]", got)
 		}
@@ -288,6 +315,7 @@ func TestReplace(t *testing.T) {
 		{name: "higher priority than the root", v: 0, wantPrev: 1, wantHeap: []int{0, 3, 5, 7, 9}},
 		{name: "equal to the root", v: 1, wantPrev: 1, wantHeap: []int{1, 3, 5, 7, 9}},
 	}
+
 	for _, arity := range testArities {
 		for _, tc := range tests {
 			t.Run(fmt.Sprintf("d=%d/%s", arity, tc.name), func(t *testing.T) {
@@ -295,9 +323,11 @@ func TestReplace(t *testing.T) {
 				if got, ok := h.Replace(tc.v); got != tc.wantPrev || !ok {
 					t.Errorf("Replace(%d) = %d, %t, want %d, true", tc.v, got, ok, tc.wantPrev)
 				}
+
 				if err := invariantError(h); err != nil {
 					t.Errorf("after Replace(%d): %v", tc.v, err)
 				}
+
 				if got := drain(h); !slices.Equal(got, tc.wantHeap) {
 					t.Errorf("heap after Replace(%d) = %v, want %v", tc.v, got, tc.wantHeap)
 				}
@@ -312,6 +342,7 @@ func TestPushPop(t *testing.T) {
 		if got := h.PushPop(7); got != 7 {
 			t.Errorf("PushPop(7) on empty heap = %d, want 7", got)
 		}
+
 		if got := h.Len(); got != 0 {
 			t.Errorf("Len() after PushPop on empty heap = %d, want 0", got)
 		}
@@ -328,6 +359,7 @@ func TestPushPop(t *testing.T) {
 		{name: "higher priority than the root", v: 0, want: 0, wantHeap: []int{1, 3, 5, 7, 9}},
 		{name: "equal to the root", v: 1, want: 1, wantHeap: []int{1, 3, 5, 7, 9}},
 	}
+
 	for _, arity := range testArities {
 		for _, tc := range tests {
 			t.Run(fmt.Sprintf("d=%d/%s", arity, tc.name), func(t *testing.T) {
@@ -335,9 +367,11 @@ func TestPushPop(t *testing.T) {
 				if got := h.PushPop(tc.v); got != tc.want {
 					t.Errorf("PushPop(%d) = %d, want %d", tc.v, got, tc.want)
 				}
+
 				if err := invariantError(h); err != nil {
 					t.Errorf("after PushPop(%d): %v", tc.v, err)
 				}
+
 				if got := drain(h); !slices.Equal(got, tc.wantHeap) {
 					t.Errorf("heap after PushPop(%d) = %v, want %v", tc.v, got, tc.wantHeap)
 				}
@@ -348,14 +382,17 @@ func TestPushPop(t *testing.T) {
 
 func TestPopAtOutOfRange(t *testing.T) {
 	h := FromSlice([]int{1, 2, 3}, 2, intLess)
+
 	for _, i := range []int{-1, 3, 4, 1 << 40} {
 		if got, ok := h.PopAt(i); got != 0 || ok {
 			t.Errorf("PopAt(%d) on heap of 3 = %d, %t, want 0, false", i, got, ok)
 		}
 	}
+
 	if got := h.Len(); got != 3 {
 		t.Errorf("Len() after out-of-range PopAt = %d, want 3", got)
 	}
+
 	if got, ok := New(2, intLess).PopAt(0); got != 0 || ok {
 		t.Errorf("PopAt(0) on empty heap = %d, %t, want 0, false", got, ok)
 	}
@@ -367,7 +404,9 @@ func TestPopAt(t *testing.T) {
 			if n > 300 {
 				continue // Removing every index of a large heap adds time, not coverage.
 			}
+
 			vals := randomInts(n)
+
 			for i := range n {
 				t.Run(fmt.Sprintf("d=%d/n=%d/i=%d", arity, n, i), func(t *testing.T) {
 					h := FromSlice(vals, arity, intLess)
@@ -377,6 +416,7 @@ func TestPopAt(t *testing.T) {
 					if got != want || !ok {
 						t.Fatalf("PopAt(%d) = %d, %t, want %d, true", i, got, ok, want)
 					}
+
 					if err := invariantError(h); err != nil {
 						t.Fatalf("after PopAt(%d): %v", i, err)
 					}
@@ -408,9 +448,11 @@ func TestPopAtMovesReplacementUp(t *testing.T) {
 	if got, ok := h.PopAt(3); got != 11 || !ok { // 3 replaces 11 and must rise above 10.
 		t.Fatalf("PopAt(3) = %d, %t, want 11, true", got, ok)
 	}
+
 	if err := invariantError(h); err != nil {
 		t.Errorf("after PopAt(3): %v", err)
 	}
+
 	if got, want := drain(h), []int{0, 1, 2, 3, 10, 12}; !slices.Equal(got, want) {
 		t.Errorf("heap after PopAt(3) = %v, want %v", got, want)
 	}
@@ -418,14 +460,17 @@ func TestPopAtMovesReplacementUp(t *testing.T) {
 
 func TestFixAndUpdateOutOfRange(t *testing.T) {
 	h := FromSlice([]int{1, 2, 3}, 2, intLess)
+
 	for _, i := range []int{-1, 3, 4, 1 << 40} {
 		if h.Fix(i) {
 			t.Errorf("Fix(%d) on heap of 3 = true, want false", i)
 		}
+
 		if h.Update(i, 0) {
 			t.Errorf("Update(%d, 0) on heap of 3 = true, want false", i)
 		}
 	}
+
 	if got, want := drain(h), []int{1, 2, 3}; !slices.Equal(got, want) {
 		t.Errorf("heap after out-of-range Fix and Update = %v, want %v", got, want)
 	}
@@ -440,6 +485,7 @@ func TestFix(t *testing.T) {
 			for i := range 50 {
 				t.Run(fmt.Sprintf("d=%d/i=%d/priority=%d", arity, i, newPriority), func(t *testing.T) {
 					h := New(arity, less)
+
 					for _, v := range randomInts(50) {
 						h.Push(&item{priority: v})
 					}
@@ -448,9 +494,11 @@ func TestFix(t *testing.T) {
 					if !h.Fix(i) {
 						t.Fatalf("Fix(%d) = false, want true", i)
 					}
+
 					if err := invariantError(h); err != nil {
 						t.Errorf("after Fix(%d): %v", i, err)
 					}
+
 					if got := h.Len(); got != 50 {
 						t.Errorf("Len() after Fix(%d) = %d, want 50", i, got)
 					}
@@ -472,6 +520,7 @@ func TestUpdate(t *testing.T) {
 					if !h.Update(i, v) {
 						t.Fatalf("Update(%d, %d) = false, want true", i, v)
 					}
+
 					if err := invariantError(h); err != nil {
 						t.Fatalf("after Update(%d, %d): %v", i, v, err)
 					}
@@ -480,6 +529,7 @@ func TestUpdate(t *testing.T) {
 					at, _ := slices.BinarySearch(want, old)
 					want[at] = v
 					slices.Sort(want)
+
 					if got := drain(h); !slices.Equal(got, want) {
 						t.Errorf("heap after Update(%d, %d) = %v, want %v", i, v, got, want)
 					}
@@ -491,18 +541,23 @@ func TestUpdate(t *testing.T) {
 
 func TestClear(t *testing.T) {
 	h := New(4, func(a, b *int) bool { return *a < *b })
+
 	for _, v := range randomInts(100) {
 		h.Push(&v)
 	}
+
 	capBefore := cap(h.data)
 
 	h.Clear()
+
 	if got := h.Len(); got != 0 {
 		t.Errorf("Len() after Clear = %d, want 0", got)
 	}
+
 	if got := cap(h.data); got != capBefore {
 		t.Errorf("capacity after Clear = %d, want %d", got, capBefore)
 	}
+
 	for i, p := range h.data[:capBefore] {
 		if p != nil {
 			t.Fatalf("Clear left a reference at index %d; elements must be released", i)
@@ -513,6 +568,7 @@ func TestClear(t *testing.T) {
 	one, two := 1, 2
 	h.Push(&two)
 	h.Push(&one)
+
 	if got, ok := h.Pop(); !ok || *got != 1 {
 		t.Errorf("Pop() after Clear and two pushes did not return 1")
 	}
@@ -522,9 +578,11 @@ func TestRemovalReleasesReferences(t *testing.T) {
 	less := func(a, b *int) bool { return *a < *b }
 	fill := func() *DHeap[*int] {
 		h := New(2, less)
+
 		for _, v := range []int{4, 2, 6, 1, 5} {
 			h.Push(&v)
 		}
+
 		return h
 	}
 
@@ -537,13 +595,16 @@ func TestRemovalReleasesReferences(t *testing.T) {
 		{name: "PopAt middle", remove: func(h *DHeap[*int]) { h.PopAt(2) }},
 		{name: "PopAt last", remove: func(h *DHeap[*int]) { h.PopAt(4) }},
 	}
+
 	for _, tc := range removals {
 		t.Run(tc.name, func(t *testing.T) {
 			h := fill()
 			tc.remove(h)
+
 			if got := h.Len(); got != 4 {
 				t.Fatalf("Len() after %s = %d, want 4", tc.name, got)
 			}
+
 			if got := h.data[:5][4]; got != nil {
 				t.Errorf("%s left a reference past the length; elements must be released", tc.name)
 			}
@@ -559,9 +620,11 @@ func TestClone(t *testing.T) {
 	if got, want := c.Arity(), h.Arity(); got != want {
 		t.Errorf("Clone().Arity() = %d, want %d", got, want)
 	}
+
 	if got, want := c.shift, h.shift; got != want {
 		t.Errorf("Clone().shift = %d, want %d", got, want)
 	}
+
 	if !slices.Equal(c.data, h.data) {
 		t.Errorf("Clone() holds %v, want %v", c.data, h.data)
 	}
@@ -571,15 +634,19 @@ func TestClone(t *testing.T) {
 	c.Pop()
 	c.Pop()
 	h.Push(-2)
+
 	if got, want := h.Len(), len(vals)+1; got != want {
 		t.Errorf("Len() of original after changing the clone = %d, want %d", got, want)
 	}
+
 	if got, want := c.Len(), len(vals)-1; got != want {
 		t.Errorf("Len() of clone after changing the original = %d, want %d", got, want)
 	}
+
 	if !h.IsValid() || !c.IsValid() {
 		t.Errorf("IsValid() = %t (original), %t (clone), want true, true", h.IsValid(), c.IsValid())
 	}
+
 	if got, want := drain(h), sortedCopy(append(slices.Clone(vals), -2), ascending); !slices.Equal(got, want) {
 		t.Errorf("original after changing the clone = %v, want %v", got, want)
 	}
@@ -589,6 +656,7 @@ func TestCloneEmpty(t *testing.T) {
 	c := New(3, intLess).Clone()
 	c.Push(2)
 	c.Push(1)
+
 	if got, want := drain(c), []int{1, 2}; !slices.Equal(got, want) {
 		t.Errorf("clone of empty heap after two pushes = %v, want %v", got, want)
 	}
@@ -601,6 +669,7 @@ func TestIsValidDetectsViolations(t *testing.T) {
 			if !h.IsValid() {
 				t.Fatalf("d=%d: IsValid() on fresh heap = false, want true", arity)
 			}
+
 			h.data[i] = -1 // Now smaller than its parent.
 			if h.IsValid() {
 				t.Errorf("d=%d: IsValid() = true after corrupting index %d, want false", arity, i)
@@ -622,6 +691,7 @@ func TestIsValidAgreesWithInvariantCheck(t *testing.T) {
 			}
 
 			h.heapify()
+
 			if got, err := h.IsValid(), invariantError(h); !got || err != nil {
 				t.Errorf("d=%d, n=%d: after heapify, IsValid() = %t and invariant check = %v, want true and <nil>", arity, n, got, err)
 			}
@@ -645,17 +715,20 @@ func TestEqualElementsAreNotMoved(t *testing.T) {
 		for id := range n {
 			h.Push(item{priority: 1, id: id})
 		}
+
 		for i, v := range h.data {
 			if v.id != i {
 				t.Fatalf("d=%d: element %d is at index %d; pushing equal elements must not reorder them", arity, v.id, i)
 			}
 		}
+
 		if moves != n {
 			t.Errorf("d=%d: %d pushes of equal elements reported %d index changes, want %d", arity, n, moves, n)
 		}
 
 		// siftDown: a new root that ties with its children must stay at the root.
 		h.Replace(item{priority: 1, id: -1})
+
 		if got := h.data[0].id; got != -1 {
 			t.Errorf("d=%d: Replace with an equal element left element %d at the root, want the new element", arity, got)
 		}
@@ -680,16 +753,19 @@ func newTrackedHeap(arity int) *DHeap[*tracked] {
 // every element in removed was told that it left the heap.
 func checkTracking(t *testing.T, op string, h *DHeap[*tracked], removed []*tracked) {
 	t.Helper()
+
 	for i, v := range h.data {
 		if v.index != i {
 			t.Fatalf("after %s: element at index %d recorded index %d", op, i, v.index)
 		}
 	}
+
 	for _, v := range removed {
 		if v.index != -1 {
 			t.Fatalf("after %s: removed element recorded index %d, want -1", op, v.index)
 		}
 	}
+
 	if err := invariantError(h); err != nil {
 		t.Fatalf("after %s: %v", op, err)
 	}
@@ -704,23 +780,27 @@ func TestIndexTracking(t *testing.T) {
 
 			for step := range 5000 {
 				var op string
+
 				switch r.IntN(8) {
 				case 0, 1, 2:
 					op = "Push"
 					h.Push(&tracked{priority: r.IntN(1000), index: -2})
 				case 3:
 					op = "Pop"
+
 					if v, ok := h.Pop(); ok {
 						removed = append(removed, v)
 					}
 				case 4:
 					op = "PopAt"
+
 					if h.Len() > 0 {
 						v, _ := h.PopAt(r.IntN(h.Len()))
 						removed = append(removed, v)
 					}
 				case 5:
 					op = "Fix"
+
 					if h.Len() > 0 {
 						i := r.IntN(h.Len())
 						h.data[i].priority = r.IntN(1000)
@@ -728,6 +808,7 @@ func TestIndexTracking(t *testing.T) {
 					}
 				case 6:
 					op = "Update"
+
 					if h.Len() > 0 {
 						i := r.IntN(h.Len())
 						removed = append(removed, h.data[i])
@@ -736,6 +817,7 @@ func TestIndexTracking(t *testing.T) {
 				case 7:
 					if r.IntN(2) == 0 {
 						op = "Replace"
+
 						if prev, ok := h.Replace(&tracked{priority: r.IntN(1000), index: -2}); ok {
 							removed = append(removed, prev)
 						}
@@ -745,6 +827,7 @@ func TestIndexTracking(t *testing.T) {
 						removed = append(removed, h.PushPop(v))
 					}
 				}
+
 				checkTracking(t, fmt.Sprintf("step %d (%s)", step, op), h, removed)
 			}
 
@@ -769,9 +852,11 @@ func TestIndexTrackingUpdateWithSameElement(t *testing.T) {
 	if !h.Update(it.index, it) {
 		t.Fatalf("Update(%d, same element) = false, want true", it.index)
 	}
+
 	if it.index != 0 {
 		t.Errorf("element recorded index %d after becoming the root, want 0", it.index)
 	}
+
 	checkTracking(t, "Update with same element", h, nil)
 }
 
@@ -788,6 +873,7 @@ func TestIndexTrackingFromSlice(t *testing.T) {
 			WithIndexTracking(func(v *tracked, i int) { v.index = i; calls++ }),
 		)
 		checkTracking(t, fmt.Sprintf("FromSlice(d=%d)", arity), h, nil)
+
 		if calls != len(items) {
 			t.Errorf("FromSlice(d=%d) reported %d index changes, want %d (one per element)", arity, calls, len(items))
 		}
@@ -796,6 +882,7 @@ func TestIndexTrackingFromSlice(t *testing.T) {
 
 func TestCloneDoesNotInheritIndexTracking(t *testing.T) {
 	h := newTrackedHeap(2)
+
 	for _, v := range randomInts(50) {
 		h.Push(&tracked{priority: v})
 	}
@@ -817,16 +904,19 @@ func TestRandomOperationsAgainstModel(t *testing.T) {
 				at, _ := slices.BinarySearch(model, v)
 				model = slices.Insert(model, at, v)
 			}
+
 			remove := func(v int) {
 				at, found := slices.BinarySearch(model, v)
 				if !found {
 					t.Fatalf("heap returned %d, which the model does not contain", v)
 				}
+
 				model = slices.Delete(model, at, at+1)
 			}
 
 			for step := range 20000 {
 				v := r.IntN(500)
+
 				switch op := r.IntN(10); {
 				case op < 4:
 					h.Push(v)
@@ -836,10 +926,12 @@ func TestRandomOperationsAgainstModel(t *testing.T) {
 					if ok != (len(model) > 0) {
 						t.Fatalf("step %d: Pop() ok = %t with %d elements", step, ok, len(model))
 					}
+
 					if ok {
 						if got != model[0] {
 							t.Fatalf("step %d: Pop() = %d, want %d", step, got, model[0])
 						}
+
 						remove(got)
 					}
 				case op == 6:
@@ -848,8 +940,10 @@ func TestRandomOperationsAgainstModel(t *testing.T) {
 						if got != model[0] {
 							t.Fatalf("step %d: Replace(%d) = %d, want %d", step, v, got, model[0])
 						}
+
 						remove(got)
 					}
+
 					insert(v)
 				case op == 7:
 					insert(v)
@@ -857,6 +951,7 @@ func TestRandomOperationsAgainstModel(t *testing.T) {
 					if got := h.PushPop(v); got != want {
 						t.Fatalf("step %d: PushPop(%d) = %d, want %d", step, v, got, want)
 					}
+
 					remove(want)
 				case op == 8 && h.Len() > 0:
 					got, _ := h.PopAt(r.IntN(h.Len()))
@@ -871,9 +966,11 @@ func TestRandomOperationsAgainstModel(t *testing.T) {
 				if got, want := h.Len(), len(model); got != want {
 					t.Fatalf("step %d: Len() = %d, want %d", step, got, want)
 				}
+
 				if err := invariantError(h); err != nil {
 					t.Fatalf("step %d: %v", step, err)
 				}
+
 				if len(model) > 0 {
 					if got, _ := h.Peek(); got != model[0] {
 						t.Fatalf("step %d: Peek() = %d, want %d", step, got, model[0])
@@ -895,21 +992,27 @@ func TestLargeElements(t *testing.T) {
 		key     int
 		payload [16]int
 	}
+
 	h := New(4, func(a, b large) bool { return a.key < b.key })
+
 	for _, v := range randomInts(500) {
 		e := large{key: v}
 		for i := range e.payload {
 			e.payload[i] = v
 		}
+
 		h.Push(e)
 	}
 
 	prev := -1
+
 	for _, e := range drain(h) {
 		if e.key < prev {
 			t.Fatalf("popped key %d after %d; elements are out of order", e.key, prev)
 		}
+
 		prev = e.key
+
 		for i, p := range e.payload {
 			if p != e.key {
 				t.Fatalf("element with key %d has payload[%d] = %d; the element was corrupted", e.key, i, p)
@@ -937,6 +1040,7 @@ func TestSteadyStateDoesNotAllocate(t *testing.T) {
 			h.Push(w)
 			h.Peek()
 		})
+
 		if allocs != 0 {
 			t.Errorf("d=%d: steady-state operations allocate %v times per run, want 0", arity, allocs)
 		}

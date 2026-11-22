@@ -59,6 +59,7 @@ func NewQueue[T any]() *Queue[T] {
 func (q *Queue[T]) Push(value T, priority int) *Item[T] {
 	it := &Item[T]{Value: value, priority: priority, index: -1}
 	q.heap.Push(it)
+
 	return it
 }
 
@@ -74,7 +75,9 @@ func (q *Queue[T]) Update(it *Item[T], priority int) bool {
 	if !it.Queued() {
 		return false
 	}
+
 	it.priority = priority
+
 	return q.heap.Fix(it.index) // the item moves up or down as needed
 }
 
@@ -84,7 +87,9 @@ func (q *Queue[T]) Remove(it *Item[T]) bool {
 	if !it.Queued() {
 		return false
 	}
+
 	_, ok := q.heap.PopAt(it.index)
+
 	return ok
 }
 
@@ -113,6 +118,7 @@ func main() {
 	timers.Update(gc, 275)
 
 	fmt.Println()
+
 	for timers.Len() > 0 {
 		it, _ := timers.Pop()
 		fmt.Printf("t=%3dms  %s\n", it.Priority(), it.Value)

@@ -25,7 +25,8 @@ import (
 // Benchmarks whose iterations process a whole batch of elements (Push, Pop,
 // FromSlice, PushHeavy and the container/heap equivalents) report the cost of
 // one element as ns/elem. The others perform one operation per iteration, so
-// their ns/op is already the cost of one operation.
+// their ns/op is already the cost of one operation. The same goes for the
+// Ordered variants of these benchmarks.
 //
 // All input is prepared before the b.Loop loop, which excludes it from the
 // measurement; b.Loop resets the timer when it is first called.
@@ -52,6 +53,7 @@ func benchValues(n int) []int {
 	for i := range vals {
 		vals[i] = r.IntN(1 << 30)
 	}
+
 	return vals
 }
 
@@ -77,6 +79,7 @@ func forEachArity(b *testing.B, fn func(b *testing.B, arity int)) {
 func forEachAritySize(b *testing.B, fn func(b *testing.B, arity int, vals []int)) {
 	for _, n := range benchSizes {
 		vals := benchValues(n)
+
 		for _, arity := range benchArities {
 			b.Run(fmt.Sprintf("d=%d/n=%d", arity, n), func(b *testing.B) {
 				b.ReportAllocs()
@@ -92,12 +95,15 @@ func forEachAritySize(b *testing.B, fn func(b *testing.B, arity int, vals []int)
 func BenchmarkPush(b *testing.B) {
 	forEachAritySize(b, func(b *testing.B, arity int, vals []int) {
 		h := FromSlice(vals, arity, intLess) // allocates the capacity up front
+
 		for b.Loop() {
 			h.Clear()
+
 			for _, v := range vals {
 				h.Push(v)
 			}
 		}
+
 		reportPerElement(b, len(vals))
 	})
 }
@@ -107,12 +113,15 @@ func BenchmarkPush(b *testing.B) {
 func BenchmarkPushSorted(b *testing.B) {
 	forEachArity(b, func(b *testing.B, arity int) {
 		h := FromSlice(make([]int, benchSize), arity, intLess) // allocates the capacity up front
+
 		for b.Loop() {
 			h.Clear()
+
 			for v := benchSize; v > 0; v-- {
 				h.Push(v)
 			}
 		}
+
 		reportPerElement(b, benchSize)
 	})
 }
@@ -123,17 +132,21 @@ func BenchmarkPop(b *testing.B) {
 	forEachAritySize(b, func(b *testing.B, arity int, vals []int) {
 		h := FromSlice(vals, arity, intLess) // allocates the capacity up front
 		h.Clear()
+
 		for b.Loop() {
 			b.StopTimer()
+
 			for _, v := range vals {
 				h.Push(v)
 			}
+
 			b.StartTimer()
 
 			for h.Len() > 0 {
 				h.Pop()
 			}
 		}
+
 		reportPerElement(b, len(vals))
 	})
 }
@@ -145,6 +158,7 @@ func BenchmarkFromSlice(b *testing.B) {
 		for b.Loop() {
 			FromSlice(vals, arity, intLess)
 		}
+
 		reportPerElement(b, len(vals))
 	})
 }
@@ -156,9 +170,11 @@ func BenchmarkPopPush(b *testing.B) {
 	forEachAritySize(b, func(b *testing.B, arity int, vals []int) {
 		h := FromSlice(vals, arity, intLess)
 		i := 0
+
 		for b.Loop() {
 			v, _ := h.Pop()
 			h.Push(v + vals[i]&0xffff)
+
 			if i++; i == len(vals) {
 				i = 0
 			}
@@ -172,15 +188,19 @@ func BenchmarkPushHeavy(b *testing.B) {
 	vals := benchValues(benchSize)
 	forEachArity(b, func(b *testing.B, arity int) {
 		h := FromSlice(vals, arity, intLess) // allocates the capacity up front
+
 		for b.Loop() {
 			h.Clear()
+
 			for i, v := range vals {
 				h.Push(v)
+
 				if i%8 == 7 {
 					h.Pop()
 				}
 			}
 		}
+
 		reportPerElement(b, benchSize)
 	})
 }
@@ -192,9 +212,11 @@ func BenchmarkReplace(b *testing.B) {
 	forEachArity(b, func(b *testing.B, arity int) {
 		h := FromSlice(vals, arity, intLess)
 		i := 0
+
 		for b.Loop() {
 			v, _ := h.Peek()
 			h.Replace(v + vals[i]&0xffff)
+
 			if i++; i == benchSize {
 				i = 0
 			}
@@ -209,8 +231,10 @@ func BenchmarkPushPop(b *testing.B) {
 	forEachArity(b, func(b *testing.B, arity int) {
 		h := FromSlice(vals[:1000], arity, intLess)
 		i := 0
+
 		for b.Loop() {
 			h.PushPop(vals[i])
+
 			if i++; i == benchSize {
 				i = 0
 			}
@@ -225,8 +249,10 @@ func BenchmarkUpdate(b *testing.B) {
 	forEachArity(b, func(b *testing.B, arity int) {
 		h := FromSlice(vals, arity, intLess)
 		i := 0
+
 		for b.Loop() {
 			h.Update(vals[i]%benchSize, vals[benchSize-1-i])
+
 			if i++; i == benchSize {
 				i = 0
 			}
@@ -238,13 +264,16 @@ func BenchmarkUpdate(b *testing.B) {
 // elements it holds, in a fixed order.
 func newTrackedBenchHeap(arity int, vals []int) (*DHeap[*tracked], []*tracked) {
 	items := make([]*tracked, len(vals))
+
 	for i, v := range vals {
 		items[i] = &tracked{priority: v}
 	}
+
 	h := FromSlice(items, arity,
 		func(a, b *tracked) bool { return a.priority < b.priority },
 		WithIndexTracking(func(v *tracked, i int) { v.index = i }),
 	)
+
 	return h, items
 }
 
@@ -256,10 +285,12 @@ func BenchmarkFix(b *testing.B) {
 	forEachArity(b, func(b *testing.B, arity int) {
 		h, items := newTrackedBenchHeap(arity, vals)
 		i := 0
+
 		for b.Loop() {
 			it := items[i]
 			it.priority = vals[benchSize-1-i]
 			h.Fix(it.index)
+
 			if i++; i == benchSize {
 				i = 0
 			}
@@ -275,10 +306,12 @@ func BenchmarkPopPushTracked(b *testing.B) {
 	forEachArity(b, func(b *testing.B, arity int) {
 		h, _ := newTrackedBenchHeap(arity, vals)
 		i := 0
+
 		for b.Loop() {
 			it, _ := h.Pop()
 			it.priority += vals[i] & 0xffff
 			h.Push(it)
+
 			if i++; i == benchSize {
 				i = 0
 			}
@@ -312,9 +345,11 @@ func benchPopPush[T any](b *testing.B, items []T, less func(a, b T) bool, later 
 	deltas := benchValues(len(items))
 	h := FromSlice(items, 4, less)
 	i := 0
+
 	for b.Loop() {
 		v, _ := h.Pop()
 		h.Push(later(v, deltas[i]&0xffff))
+
 		if i++; i == len(items) {
 			i = 0
 		}
@@ -334,9 +369,11 @@ func BenchmarkPopPushTypes(b *testing.B) {
 
 	b.Run("struct", func(b *testing.B) {
 		items := make([]pair, len(vals))
+
 		for i, v := range vals {
 			items[i] = pair{key: v, id: i}
 		}
+
 		benchPopPush(b, items,
 			func(a, b pair) bool { return a.key < b.key },
 			func(v pair, delta int) pair { v.key += delta; return v },
@@ -345,9 +382,11 @@ func BenchmarkPopPushTypes(b *testing.B) {
 
 	b.Run("struct_with_pointers", func(b *testing.B) {
 		items := make([]record, len(vals))
+
 		for i, v := range vals {
 			items[i] = record{key: v, name: "record", meta: &vals[i]}
 		}
+
 		benchPopPush(b, items,
 			func(a, b record) bool { return a.key < b.key },
 			func(v record, delta int) record { v.key += delta; return v },
@@ -356,13 +395,198 @@ func BenchmarkPopPushTypes(b *testing.B) {
 
 	b.Run("pointer", func(b *testing.B) {
 		items := make([]*pair, len(vals))
+
 		for i, v := range vals {
 			items[i] = &pair{key: v, id: i}
 		}
+
 		benchPopPush(b, items,
 			func(a, b *pair) bool { return a.key < b.key },
 			func(v *pair, delta int) *pair { v.key += delta; return v },
 		)
+	})
+}
+
+// The benchmarks below repeat the core benchmarks for Ordered, the heap for
+// element types that support the < operator. Compare each one with the
+// benchmark of the same name without the Ordered prefix, at n=100000, to see
+// what compiling the comparison into the loops is worth.
+
+// BenchmarkOrderedPush is BenchmarkPush at n=100000 for a min-heap created
+// with NewMin.
+func BenchmarkOrderedPush(b *testing.B) {
+	vals := benchValues(benchSize)
+	forEachArity(b, func(b *testing.B, arity int) {
+		h := FromSliceMin(vals, arity) // allocates the capacity up front
+
+		for b.Loop() {
+			h.Clear()
+
+			for _, v := range vals {
+				h.Push(v)
+			}
+		}
+
+		reportPerElement(b, benchSize)
+	})
+}
+
+// BenchmarkOrderedPop is BenchmarkPop at n=100000 for a min-heap created with
+// NewMin.
+func BenchmarkOrderedPop(b *testing.B) {
+	vals := benchValues(benchSize)
+	forEachArity(b, func(b *testing.B, arity int) {
+		h := FromSliceMin(vals, arity) // allocates the capacity up front
+		h.Clear()
+
+		for b.Loop() {
+			b.StopTimer()
+
+			for _, v := range vals {
+				h.Push(v)
+			}
+
+			b.StartTimer()
+
+			for h.Len() > 0 {
+				h.Pop()
+			}
+		}
+
+		reportPerElement(b, benchSize)
+	})
+}
+
+// BenchmarkOrderedFromSlice is BenchmarkFromSlice at n=100000 for
+// FromSliceMin.
+func BenchmarkOrderedFromSlice(b *testing.B) {
+	vals := benchValues(benchSize)
+	forEachArity(b, func(b *testing.B, arity int) {
+		for b.Loop() {
+			FromSliceMin(vals, arity)
+		}
+
+		reportPerElement(b, benchSize)
+	})
+}
+
+// BenchmarkOrderedPopPush is BenchmarkPopPush at n=100000 for a min-heap
+// created with FromSliceMin.
+func BenchmarkOrderedPopPush(b *testing.B) {
+	vals := benchValues(benchSize)
+	forEachArity(b, func(b *testing.B, arity int) {
+		h := FromSliceMin(vals, arity)
+		i := 0
+
+		for b.Loop() {
+			v, _ := h.Pop()
+			h.Push(v + vals[i]&0xffff)
+
+			if i++; i == benchSize {
+				i = 0
+			}
+		}
+	})
+}
+
+// BenchmarkOrderedPopPushMax is BenchmarkOrderedPopPush for a max-heap. It
+// shows that the direction of the heap costs nothing.
+func BenchmarkOrderedPopPushMax(b *testing.B) {
+	vals := benchValues(benchSize)
+	forEachArity(b, func(b *testing.B, arity int) {
+		h := FromSliceMax(vals, arity)
+		i := 0
+
+		for b.Loop() {
+			v, _ := h.Pop()
+			h.Push(v - vals[i]&0xffff)
+
+			if i++; i == benchSize {
+				i = 0
+			}
+		}
+	})
+}
+
+// BenchmarkOrderedPushPop is BenchmarkPushPop for a min-heap created with
+// FromSliceMin: keeping the 1,000 largest values of a random stream.
+func BenchmarkOrderedPushPop(b *testing.B) {
+	vals := benchValues(benchSize)
+	forEachArity(b, func(b *testing.B, arity int) {
+		h := FromSliceMin(vals[:1000], arity)
+		i := 0
+
+		for b.Loop() {
+			h.PushPop(vals[i])
+
+			if i++; i == benchSize {
+				i = 0
+			}
+		}
+	})
+}
+
+// BenchmarkOrderedPopPushTypes measures the steady-state workload at arity 4
+// for the kinds of element type Ordered supports.
+func BenchmarkOrderedPopPushTypes(b *testing.B) {
+	vals := benchValues(benchSize)
+
+	b.Run("int", func(b *testing.B) {
+		b.ReportAllocs()
+		h := FromSliceMin(vals, 4)
+		i := 0
+
+		for b.Loop() {
+			v, _ := h.Pop()
+			h.Push(v + vals[i]&0xffff)
+
+			if i++; i == benchSize {
+				i = 0
+			}
+		}
+	})
+
+	b.Run("float64", func(b *testing.B) {
+		b.ReportAllocs()
+		floats := make([]float64, len(vals))
+
+		for i, v := range vals {
+			floats[i] = float64(v)
+		}
+
+		h := FromSliceMin(floats, 4)
+		i := 0
+
+		for b.Loop() {
+			v, _ := h.Pop()
+			h.Push(v + float64(vals[i]&0xffff))
+
+			if i++; i == benchSize {
+				i = 0
+			}
+		}
+	})
+
+	b.Run("string", func(b *testing.B) {
+		b.ReportAllocs()
+		// Fixed-width keys, so that every comparison looks at whole strings.
+		keys := make([]string, len(vals))
+
+		for i, v := range vals {
+			keys[i] = fmt.Sprintf("%012d", v)
+		}
+
+		h := FromSliceMin(keys, 4)
+		i := 0
+
+		for b.Loop() {
+			h.Pop()
+			h.Push(keys[i])
+
+			if i++; i == benchSize {
+				i = 0
+			}
+		}
 	})
 }
 
@@ -380,6 +604,7 @@ func (s *stdHeap) Pop() any {
 	n := len(old)
 	x := old[n-1]
 	*s = old[:n-1]
+
 	return x
 }
 
@@ -389,12 +614,15 @@ func BenchmarkContainerHeapPush(b *testing.B) {
 	vals := benchValues(benchSize)
 	s := make(stdHeap, 0, benchSize)
 	b.ReportAllocs()
+
 	for b.Loop() {
 		s = s[:0]
+
 		for _, v := range vals {
 			heap.Push(&s, v)
 		}
 	}
+
 	reportPerElement(b, benchSize)
 }
 
@@ -404,17 +632,21 @@ func BenchmarkContainerHeapPop(b *testing.B) {
 	vals := benchValues(benchSize)
 	s := make(stdHeap, 0, benchSize)
 	b.ReportAllocs()
+
 	for b.Loop() {
 		b.StopTimer()
+
 		for _, v := range vals {
 			heap.Push(&s, v)
 		}
+
 		b.StartTimer()
 
 		for s.Len() > 0 {
 			heap.Pop(&s)
 		}
 	}
+
 	reportPerElement(b, benchSize)
 }
 
@@ -428,9 +660,11 @@ func BenchmarkContainerHeapPopPush(b *testing.B) {
 
 	i := 0
 	b.ReportAllocs()
+
 	for b.Loop() {
 		v := heap.Pop(&s).(int)
 		heap.Push(&s, v+vals[i]&0xffff)
+
 		if i++; i == benchSize {
 			i = 0
 		}

@@ -44,6 +44,7 @@ func shortestPaths(g graph, source int) (dist, prev []int) {
 	dist = make([]int, n)
 	prev = make([]int, n)
 	pos := make([]int, n) // pos[v] is the index of v in the heap, or -1
+
 	for v := range n {
 		dist[v] = unreachable
 		prev[v] = -1
@@ -75,6 +76,7 @@ func shortestPaths(g graph, source int) (dist, prev []int) {
 			first := dist[e.to] == unreachable
 			dist[e.to] = d
 			prev[e.to] = v
+
 			if first {
 				queue.Push(e.to)
 			} else {
@@ -90,10 +92,13 @@ func shortestPaths(g graph, source int) (dist, prev []int) {
 // path returns the vertices on the shortest path that ends in target.
 func path(prev []int, target int) []int {
 	var p []int
+
 	for v := target; v != -1; v = prev[v] {
 		p = append(p, v)
 	}
+
 	slices.Reverse(p)
+
 	return p
 }
 
@@ -114,6 +119,7 @@ func main() {
 		g[a] = append(g[a], edge{to: b, weight: hours})
 		g[b] = append(g[b], edge{to: a, weight: hours})
 	}
+
 	connect(lisbon, madrid, 10)
 	connect(madrid, paris, 13)
 	connect(madrid, rome, 22)
@@ -128,13 +134,16 @@ func main() {
 	for v, name := range names {
 		if dist[v] == unreachable {
 			fmt.Printf("%-7s unreachable\n", name)
+
 			continue
 		}
 
 		var route []string
+
 		for _, u := range path(prev, v) {
 			route = append(route, names[u])
 		}
+
 		fmt.Printf("%-7s %2dh  %v\n", name, dist[v], route)
 	}
 }

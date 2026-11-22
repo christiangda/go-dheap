@@ -1,12 +1,14 @@
 # ⚙️ Design and performance
 
-How `DHeap` stores its elements, why that is fast, and how to pick the arity
-for your workload.
+How the heaps of this package store their elements, why that is fast, and how
+to pick the arity for your workload. Everything here applies to both `DHeap`
+and `Ordered`; where they differ, the text says so.
 
 - [The layout: a tree without pointers](#-the-layout-a-tree-without-pointers)
 - [Why a slice?](#-why-a-slice)
 - [How Push and Pop work](#-how-push-and-pop-work)
 - [Decisions on the hot path](#-decisions-on-the-hot-path)
+- [Ordered: comparing without a function call](#-ordered-comparing-without-a-function-call)
 - [Choosing the arity](#-choosing-the-arity)
 - [Compared with container/heap](#-compared-with-containerheap)
 - [Running the benchmarks](#-running-the-benchmarks)
@@ -141,19 +143,68 @@ sinks the hole to a leaf without comparing against the moving element and
 then sifts up. It made draining a heap about 10% faster but the steady-state
 pop-and-push workload 20–40% slower, so it is not used.
 
-### The remaining cost: the comparison callback
+## ⚡ Ordered: comparing without a function call
 
-`less` is a function value, so every comparison is an indirect call that the
-compiler cannot inline. This is the price of supporting any element type and
-any ordering with one implementation, and it is the largest remaining cost of
-`Pop`. Keep `less` small, and avoid captures of large structures by value.
+After the optimizations above, the largest remaining cost of a `DHeap` is the
+comparison itself. `less` is a function value, so every comparison is an
+indirect call that the compiler cannot inline: arguments are set up, the call
+is made, the result comes back, and only then can the loop branch on it. That
+is the price of supporting any element type and any ordering.
+
+`Ordered` removes that price for the element types that do not need it. It is
+restricted to types that support the `<` operator, so its loops contain the
+comparison itself, a couple of machine instructions, instead of a call.
+Everything else is the same: the layout, the hold-and-shift loops, the shift
+for the parent.
+
+Measured in one run, 100,000 `int` elements, nanoseconds per element:
+
+| Operation | `DHeap` d=2 | `Ordered` d=2 | | `DHeap` d=4 | `Ordered` d=4 | | `DHeap` d=8 | `Ordered` d=8 | |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Push | 21.3 | 17.9 | −16% | 14.1 | 12.1 | −14% | 11.0 | 9.0 | −18% |
+| Pop | 170.3 | 130.0 | −24% | 171.1 | 130.6 | −24% | 207.2 | 155.7 | −25% |
+| Pop + Push | 141.1 | 103.5 | −27% | 156.6 | 119.2 | −24% | 206.4 | 156.4 | −24% |
+| FromSlice | 17.0 | 13.6 | −20% | 11.0 | 9.1 | −17% | 8.6 | 6.8 | −21% |
+
+A max-heap costs the same as a min-heap; the direction is a flag that the
+branch predictor never gets wrong.
+
+### Why two types and not one
+
+Two ways of giving `DHeap` itself this fast path were built and measured:
+
+- **Passing the comparison as a type parameter** (a type with a `Less`
+  method). Go does not inline calls made through a type parameter, so this
+  was slower than the function value, not faster.
+- **Selecting specialized loops through function fields** inside `DHeap`.
+  That recovered about two thirds of the gain for `Pop`, none for `Push`,
+  made `Push` on ordinary heaps about 3% slower, and made the code harder to
+  follow.
+
+A separate type keeps every call direct. Its cost is that the two sift loops
+exist twice, once in [dheap.go](../dheap.go) and once in
+[ordered.go](../ordered.go), and have to be kept in step.
+
+`Ordered` has no `Fix`, `Update`, `PopAt` or index tracking. A number cannot
+be changed in place, and a value that is its own priority has no identity to
+track, so those operations belong to `DHeap`.
+
+### Getting the most out of `DHeap`
+
+- Keep `less` small. It runs for every comparison.
+- Do not capture large structures by value in the `less` closure.
+- If the priority is a number you can extract, consider a heap of small
+  structs that carry the priority next to an ID, instead of a heap of
+  pointers. See [the effect of the element type](#the-effect-of-the-element-type).
 
 ## 🧮 Choosing the arity
 
-Measured with `int` elements and `less` = `a < b` on an Intel Core i7-7700HQ
-(6 MB L3 cache), Go 1.27, linux/amd64. Nanoseconds per element; lower is
-better; the best value of each row is in bold. Your numbers will differ, the
-pattern should not.
+Measured with a `DHeap` of `int` elements and `less` = `a < b` on an Intel
+Core i7-7700HQ (6 MB L3 cache), Go 1.27, linux/amd64. Nanoseconds per element;
+lower is better; the best value of each row is in bold. Your numbers will
+differ, the pattern should not, and it is the same for `Ordered`. Timings on
+this machine vary by a few percent between runs, so small differences between
+tables measured in different runs mean nothing.
 
 **Push**: pushing *n* random values.
 
@@ -232,17 +283,19 @@ values are a few words large.
 ## 🆚 Compared with `container/heap`
 
 The standard library's heap is binary and works through an interface. The same
-machine and input, 100,000 `int` elements:
+machine and input, 100,000 `int` elements, measured in the same run as the
+table for `Ordered` above:
 
-| Operation | `container/heap` | `DHeap` d=2 | `DHeap` d=4 | `DHeap` d=8 |
-| --- | --- | --- | --- | --- |
-| Push, ns per element | 44.1 | 24.6 | 14.2 | **12.4** |
-| Pop, ns per element | 207.5 | **165.3** | 181.0 | 232.7 |
-| Pop + Push, ns per pair | 184.8 | **158.9** | 162.8 | 203.7 |
-| Allocations per Push or Pop of an `int` | 1 | **0** | **0** | **0** |
+| Operation | `container/heap` | `DHeap` d=2 | `DHeap` d=4 | `Ordered` d=2 | `Ordered` d=4 |
+| --- | --- | --- | --- | --- | --- |
+| Push, ns per element | 39.5 | 21.3 | 14.1 | 17.9 | **12.1** |
+| Pop, ns per element | 211.9 | 170.3 | 171.1 | **130.0** | 130.6 |
+| Pop + Push, ns per pair | 187.8 | 141.1 | 156.6 | **103.5** | 119.2 |
+| Allocations per Push or Pop of an `int` | 1 | **0** | **0** | **0** | **0** |
 
 `container/heap` passes elements as `any`, which allocates for most values
-that are not pointers. `DHeap` is generic, so elements are never boxed.
+that are not pointers. The heaps of this package are generic, so elements are
+never boxed.
 
 ## 🏃 Running the benchmarks
 
@@ -271,4 +324,5 @@ go run golang.org/x/perf/cmd/benchstat@latest old.txt new.txt
 | `Fix`, `Update` | Changing elements in the middle of the heap |
 | `PopPushTracked` | The cost of index tracking |
 | `PopPushTypes` | Element types of different sizes and pointer content |
+| `Ordered*` | The core operations for `Ordered`, to compare with the benchmarks of the same name for `DHeap` |
 | `ContainerHeap*` | The standard library as a reference |

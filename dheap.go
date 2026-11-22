@@ -1,24 +1,42 @@
-// Package dheap implements a generic d-ary heap, a priority queue stored as an
+// Package dheap implements generic d-ary heaps: priority queues stored as an
 // implicit tree in a slice, in which every node has up to d children.
+//
+// The package has two heap types that share one design:
+//
+//   - [DHeap] holds elements of any type and orders them with a less function.
+//     It also supports updating and removing elements in the middle of the
+//     heap.
+//   - [Ordered] holds numbers or strings and orders them with the < operator.
+//     It is the faster of the two, because its comparisons are compiled into
+//     the heap's loops instead of being called through a function value.
+//
+// Use Ordered when the elements themselves are the priorities, and DHeap for
+// everything else.
 //
 // # Ordering
 //
-// A heap is ordered by the less function given to [New] or [FromSlice]. The
-// element with the highest priority, the one [DHeap.Pop] returns first, is the
-// one that less orders before all others. A less of a < b therefore gives a
-// min-heap and a less of a > b gives a max-heap:
+// A [DHeap] is ordered by the less function given to [New] or [FromSlice].
+// The element with the highest priority, the one [DHeap.Pop] returns first, is
+// the one that less orders before all others. A less that compares with <
+// therefore gives a min-heap, and one that compares with > gives a max-heap:
 //
-//	minHeap := dheap.New(4, func(a, b int) bool { return a < b })
-//	maxHeap := dheap.New(4, func(a, b int) bool { return a > b })
+//	earliestFirst := dheap.New(4, func(a, b job) bool { return a.deadline < b.deadline })
+//	largestFirst := dheap.New(4, func(a, b job) bool { return a.size > b.size })
+//
+// An [Ordered] needs no less function. Its constructor decides the direction:
+//
+//	minHeap := dheap.NewMin[int](4)
+//	maxHeap := dheap.NewMax[float64](4)
 //
 // Elements that compare equal are returned in an unspecified order. To get a
-// stable order, break ties inside less, for example with an insertion counter.
+// stable order, use a DHeap and break ties inside less, for example with an
+// insertion counter.
 //
 // # Choosing the arity
 //
 // The arity d is the number of children per node. A larger arity makes the
-// tree shallower, which makes [DHeap.Push] cheaper, but [DHeap.Pop] has to
-// compare more children on every level:
+// tree shallower, which makes Push cheaper, but Pop has to compare more
+// children on every level:
 //
 //	Push, siftUp:   O(log_d n) comparisons
 //	Pop, siftDown:  O(d log_d n) comparisons
@@ -60,8 +78,8 @@
 //
 // # Concurrency
 //
-// A [DHeap] is not safe for concurrent use. Callers that share one between
-// goroutines must synchronize access themselves.
+// Neither heap type is safe for concurrent use. Callers that share a heap
+// between goroutines must synchronize access themselves.
 package dheap
 
 import (
@@ -69,7 +87,10 @@ import (
 	"slices"
 )
 
-// DHeap is a d-ary heap of elements of type T.
+// DHeap is a d-ary heap of elements of any type T, ordered by a less function.
+//
+// For element types that support the < operator, [Ordered] does the same job
+// faster.
 //
 // The zero value is not usable; create a DHeap with [New] or [FromSlice].
 // A DHeap must not be copied after first use; use [DHeap.Clone] instead.
@@ -136,9 +157,11 @@ func WithIndexTracking[T any](fn func(v T, i int)) Option[T] {
 // a programming error that no caller could handle at run time.
 func New[T any](arity int, less func(a, b T) bool, opts ...Option[T]) *DHeap[T] {
 	h := newDHeap(arity, less)
+
 	for _, opt := range opts {
 		opt(h)
 	}
+
 	return h
 }
 
@@ -160,11 +183,13 @@ func FromSlice[T any](data []T, arity int, less func(a, b T) bool, opts ...Optio
 	for _, opt := range opts {
 		opt(h)
 	}
+
 	if h.onMove != nil {
 		for i, v := range h.data {
 			h.onMove(v, i)
 		}
 	}
+
 	return h
 }
 
@@ -174,6 +199,7 @@ func newDHeap[T any](arity int, less func(a, b T) bool) *DHeap[T] {
 	if arity < 2 {
 		panic("dheap: arity must be at least 2")
 	}
+
 	if less == nil {
 		panic("dheap: less function must not be nil")
 	}
@@ -182,9 +208,11 @@ func newDHeap[T any](arity int, less func(a, b T) bool) *DHeap[T] {
 		arity: arity,
 		less:  less,
 	}
+
 	if arity&(arity-1) == 0 { // arity is a power of two
 		h.shift = uint(bits.TrailingZeros(uint(arity)))
 	}
+
 	return h
 }
 
@@ -209,8 +237,10 @@ func (h *DHeap[T]) IsEmpty() bool {
 func (h *DHeap[T]) Peek() (T, bool) {
 	if len(h.data) == 0 {
 		var zero T
+
 		return zero, false
 	}
+
 	return h.data[0], true
 }
 
@@ -235,6 +265,7 @@ func (h *DHeap[T]) Pop() (T, bool) {
 	h.data[0] = h.data[last]
 	h.data[last] = zero // Do not keep the element reachable past the length.
 	h.data = h.data[:last]
+
 	if last > 0 {
 		h.siftDown(0)
 	}
@@ -242,6 +273,7 @@ func (h *DHeap[T]) Pop() (T, bool) {
 	if h.onMove != nil {
 		h.onMove(top, -1)
 	}
+
 	return top, true
 }
 
@@ -256,6 +288,7 @@ func (h *DHeap[T]) Replace(v T) (T, bool) {
 	if len(h.data) == 0 {
 		h.Push(v)
 		var zero T
+
 		return zero, false
 	}
 
@@ -266,6 +299,7 @@ func (h *DHeap[T]) Replace(v T) (T, bool) {
 	if h.onMove != nil {
 		h.onMove(prev, -1)
 	}
+
 	return prev, true
 }
 
@@ -288,6 +322,7 @@ func (h *DHeap[T]) PushPop(v T) T {
 	if h.onMove != nil {
 		h.onMove(top, -1)
 	}
+
 	return top
 }
 
@@ -308,6 +343,7 @@ func (h *DHeap[T]) PopAt(i int) (T, bool) {
 	h.data[i] = h.data[last]
 	h.data[last] = zero // Do not keep the element reachable past the length.
 	h.data = h.data[:last]
+
 	if i < last {
 		h.fix(i)
 	}
@@ -315,6 +351,7 @@ func (h *DHeap[T]) PopAt(i int) (T, bool) {
 	if h.onMove != nil {
 		h.onMove(removed, -1)
 	}
+
 	return removed, true
 }
 
@@ -327,7 +364,9 @@ func (h *DHeap[T]) Fix(i int) bool {
 	if i < 0 || i >= len(h.data) {
 		return false
 	}
+
 	h.fix(i)
+
 	return true
 }
 
@@ -346,7 +385,9 @@ func (h *DHeap[T]) Update(i int, v T) bool {
 		// Report the removal first: old and v may be the same element.
 		h.onMove(old, -1)
 	}
+
 	h.fix(i)
+
 	return true
 }
 
@@ -358,6 +399,7 @@ func (h *DHeap[T]) Clear() {
 			h.onMove(v, -1)
 		}
 	}
+
 	clear(h.data) // Release the references held by the elements.
 	h.data = h.data[:0]
 }
@@ -392,6 +434,7 @@ func (h *DHeap[T]) IsValid() bool {
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -403,6 +446,7 @@ func (h *DHeap[T]) heapify() {
 	if n < 2 {
 		return
 	}
+
 	for i := (n - 2) / h.arity; i >= 0; i-- {
 		h.siftDown(i)
 	}
@@ -434,11 +478,13 @@ func (h *DHeap[T]) siftUp(i int) int {
 	arity, shift := h.arity, h.shift
 
 	item := data[i]
+
 	for i > 0 {
 		// Integer division is one of the slowest instructions of a CPU, and
 		// this is the only one on the push path. The branch is predicted
 		// perfectly because shift never changes.
 		var parent int
+
 		if shift != 0 {
 			parent = (i - 1) >> shift
 		} else {
@@ -448,16 +494,22 @@ func (h *DHeap[T]) siftUp(i int) int {
 		if !less(item, data[parent]) {
 			break
 		}
+
 		data[i] = data[parent]
+
 		if onMove != nil {
 			onMove(data[i], i)
 		}
+
 		i = parent
 	}
+
 	data[i] = item
+
 	if onMove != nil {
 		onMove(item, i)
 	}
+
 	return i
 }
 
@@ -472,6 +524,7 @@ func (h *DHeap[T]) siftDown(i int) int {
 	n := len(data)
 
 	item := data[i]
+
 	for {
 		first := i*arity + 1
 		if first >= n {
@@ -481,6 +534,7 @@ func (h *DHeap[T]) siftDown(i int) int {
 		// Find the child with the highest priority. The last internal node
 		// may have fewer than arity children.
 		best := first
+
 		for j, end := first+1, min(first+arity, n); j < end; j++ {
 			if less(data[j], data[best]) {
 				best = j
@@ -490,15 +544,21 @@ func (h *DHeap[T]) siftDown(i int) int {
 		if !less(data[best], item) {
 			break
 		}
+
 		data[i] = data[best]
+
 		if onMove != nil {
 			onMove(data[i], i)
 		}
+
 		i = best
 	}
+
 	data[i] = item
+
 	if onMove != nil {
 		onMove(item, i)
 	}
+
 	return i
 }
